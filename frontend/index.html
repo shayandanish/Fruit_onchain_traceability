@@ -1120,8 +1120,6 @@
     // ── GLOBALS ──
     let web3, contract;
 
-    // ── MOBILE DETECTION ──
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
     // ── SET CONNECTED STATE ──
     function setConnected(provider, account) {
@@ -1140,80 +1138,34 @@
 
     // ── CONNECT WALLET ──
     async function connectWallet() {
-      // Case 1: Desktop — MetaMask extension is present
-      if (window.ethereum && !isMobile) {
+      // window.ethereum is injected by MetaMask extension (desktop) or
+      // MetaMask mobile app's built-in browser — connect directly.
+      if (window.ethereum) {
         try {
           const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
           setConnected(window.ethereum, accounts[0]);
-          return;
         } catch (err) {
           showModal('error', 'Connection Failed', err.message);
-          return;
         }
-      }
-
-      // Case 2: Inside MetaMask mobile browser (window.ethereum injected)
-      if (window.ethereum && isMobile) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          setConnected(window.ethereum, accounts[0]);
-          return;
-        } catch (err) {
-          showModal('error', 'Connection Failed', err.message);
-          return;
-        }
-      }
-
-      // Case 3: Mobile browser WITHOUT MetaMask — deep link into MetaMask app
-      if (isMobile) {
-        const dappUrl = encodeURIComponent(window.location.href);
-        const mmDeepLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
-        showMobileConnectModal(mmDeepLink);
         return;
       }
 
-      // Case 4: Desktop without extension — prompt install
-      showModal('warning', 'MetaMask Not Found',
-        'Please install the MetaMask browser extension from metamask.io, then refresh this page.');
+      // No injected provider — build the deep link
+      const mmDeepLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // Mobile: immediately open MetaMask app (no intermediate modal)
+        window.location.href = mmDeepLink;
+        // When user returns from MetaMask, re-check connection
+        window.addEventListener('focus', recheckConnection, { once: true });
+      } else {
+        // Desktop: extension not installed — show a simple install message
+        showModal('warning', 'MetaMask Extension Required',
+          'Please install the MetaMask browser extension at metamask.io, then refresh this page.');
+      }
     }
 
-    // ── MOBILE CONNECT MODAL ──
-    function showMobileConnectModal(deepLink) {
-      // Build a nice modal with a button to open MetaMask app
-      const modal = document.getElementById('transactionModal');
-      const icon = document.getElementById('modalIcon');
-      const titleEl = document.getElementById('modalTitle');
-      const msgEl = document.getElementById('modalMessage');
-      const closeBtn = document.querySelector('.modal-close');
-
-      icon.className = 'modal-icon';
-      icon.style.background = 'rgba(251,191,36,0.12)';
-      icon.innerHTML = '<i class="fas fa-mobile-alt" style="color:#fbbf24;"></i>';
-      titleEl.textContent = 'Open in MetaMask';
-      msgEl.innerHTML = `
-        <div style="font-size:0.85rem; color:rgba(255,255,255,0.55); margin-bottom:18px; line-height:1.6;">
-          Tap below to open this page inside the MetaMask mobile app and connect your wallet.
-        </div>
-        <a href="${deepLink}" target="_blank" style="
-          display:flex; align-items:center; justify-content:center; gap:10px;
-          padding:14px; border-radius:14px;
-          background:linear-gradient(135deg,#f97316,#ea580c);
-          color:#fff; font-weight:700; font-size:0.95rem;
-          text-decoration:none; margin-bottom:12px;
-          box-shadow: 0 8px 24px -8px rgba(249,115,22,0.6);
-        ">
-          <i class="fas fa-external-link-alt"></i> Open MetaMask App
-        </a>
-        <div style="font-size:0.75rem; color:rgba(255,255,255,0.3); margin-top:4px;">
-          Don't have MetaMask? <a href="https://metamask.io/download/" target="_blank" style="color:#4ade80;">Download here</a>
-        </div>
-      `;
-      closeBtn.textContent = 'Cancel';
-      modal.classList.remove('hidden');
-
-      // After MetaMask app opens and user comes back, re-check connection
-      window.addEventListener('focus', recheckConnection, { once: true });
-    }
 
     // ── RECHECK AFTER RETURNING FROM METAMASK APP ──
     async function recheckConnection() {
