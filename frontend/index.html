@@ -9,8 +9,7 @@
     content="VerdantChain — blockchain-powered farm-to-table food traceability. Register batches, track transport, warehouse, and retail on-chain." />
   <!-- Web3 -->
   <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
-  <!-- WalletConnect Ethereum Provider v2 (unpkg serves correct UMD global) -->
-  <script src="https://unpkg.com/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js"></script>
+  <!-- WalletConnect loaded lazily on desktop only (avoids mobile CDN issues) -->
   <!-- QRCode.js for WC QR display on desktop -->
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <!-- ABI -->
@@ -1299,53 +1298,58 @@
 
     // ── 2. WalletConnect v2 ──
     async function connectWalletConnect() {
-      const wcBtn = document.getElementById('wcButton');
+      const wcBtn  = document.getElementById('wcButton');
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-      // Guard: if the WC CDN failed to load (common on mobile with slow/blocked CDNs),
-      // fall back to the MetaMask deep link so mobile users are never stuck.
-      const WCProvider = window.EthereumProvider
-                      || window['@walletconnect/ethereum-provider']?.EthereumProvider;
-
-      if (!WCProvider) {
-        if (isMobile) {
-          const mmLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
-          window.location.href = mmLink;
-        } else {
-          showModal('error', 'WalletConnect Not Loaded',
-            'The WalletConnect library failed to load. Please refresh and try again.');
-        }
+      // ━━ MOBILE: skip WC library entirely — deep link straight into MetaMask app ━━
+      if (isMobile) {
+        const deepLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+        window.location.href = deepLink;
         return;
       }
 
+      // ━━ DESKTOP: lazy-load WC script, then show QR ━━
       wcBtn.disabled = true;
+      wcBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading…';
+
+      // Inject WC script only once
+      if (!window.EthereumProvider) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://unpkg.com/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js';
+          s.onload  = resolve;
+          s.onerror = () => reject(new Error('WalletConnect script failed to load'));
+          document.head.appendChild(s);
+        });
+      }
+
+      const WCProvider = window.EthereumProvider;
+      if (!WCProvider) {
+        showModal('error', 'WalletConnect Unavailable',
+          'Could not load WalletConnect. Please try the MetaMask button instead.');
+        wcBtn.disabled = false;
+        wcBtn.innerHTML = '<i class="fas fa-mobile-alt"></i> WalletConnect';
+        return;
+      }
+
       wcBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting…';
 
       try {
         wcProvider = await WCProvider.init({
-          projectId: WC_PROJECT_ID,
-          chains: [CHAIN_ID],
+          projectId:   WC_PROJECT_ID,
+          chains:      [CHAIN_ID],
           showQrModal: false,
-          rpcMap: { [CHAIN_ID]: RPC_URL },
+          rpcMap:      { [CHAIN_ID]: RPC_URL },
           metadata: {
-            name: 'VerdantChain',
+            name:        'VerdantChain',
             description: 'Fruit On-Chain Traceability',
-            url: window.location.href,
-            icons: ['https://img.icons8.com/fluency/96/000000/apple.png']
+            url:         window.location.href,
+            icons:       ['https://img.icons8.com/fluency/96/000000/apple.png']
           }
         });
 
-        // display_uri: show QR on desktop, deep link on mobile
-        wcProvider.on('display_uri', (uri) => {
-          if (isMobile) {
-            const deepLink = `https://metamask.app.link/wc?uri=${encodeURIComponent(uri)}`;
-            window.location.href = deepLink;
-          } else {
-            showWCQr(uri);
-          }
-        });
-
-        wcProvider.on('connect', () => { closeWCQr(); });
+        wcProvider.on('display_uri', (uri) => showWCQr(uri));
+        wcProvider.on('connect',     ()    => closeWCQr());
 
         await wcProvider.connect();
 
