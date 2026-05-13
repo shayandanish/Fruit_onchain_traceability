@@ -9,8 +9,8 @@
     content="VerdantChain — blockchain-powered farm-to-table food traceability. Register batches, track transport, warehouse, and retail on-chain." />
   <!-- Web3 -->
   <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
-  <!-- WalletConnect Ethereum Provider v2 -->
-  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js"></script>
+  <!-- WalletConnect Ethereum Provider v2 (unpkg serves correct UMD global) -->
+  <script src="https://unpkg.com/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js"></script>
   <!-- QRCode.js for WC QR display on desktop -->
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <!-- ABI -->
@@ -1300,14 +1300,32 @@
     // ── 2. WalletConnect v2 ──
     async function connectWalletConnect() {
       const wcBtn = document.getElementById('wcButton');
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      // Guard: if the WC CDN failed to load (common on mobile with slow/blocked CDNs),
+      // fall back to the MetaMask deep link so mobile users are never stuck.
+      const WCProvider = window.EthereumProvider
+                      || window['@walletconnect/ethereum-provider']?.EthereumProvider;
+
+      if (!WCProvider) {
+        if (isMobile) {
+          const mmLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+          window.location.href = mmLink;
+        } else {
+          showModal('error', 'WalletConnect Not Loaded',
+            'The WalletConnect library failed to load. Please refresh and try again.');
+        }
+        return;
+      }
+
       wcBtn.disabled = true;
       wcBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting…';
 
       try {
-        wcProvider = await window.EthereumProvider.init({
+        wcProvider = await WCProvider.init({
           projectId: WC_PROJECT_ID,
           chains: [CHAIN_ID],
-          showQrModal: false,          // We render our own QR
+          showQrModal: false,
           rpcMap: { [CHAIN_ID]: RPC_URL },
           metadata: {
             name: 'VerdantChain',
@@ -1317,12 +1335,9 @@
           }
         });
 
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-        // Display URI: show QR on desktop, deep link on mobile
+        // display_uri: show QR on desktop, deep link on mobile
         wcProvider.on('display_uri', (uri) => {
           if (isMobile) {
-            // Deep link directly into MetaMask mobile
             const deepLink = `https://metamask.app.link/wc?uri=${encodeURIComponent(uri)}`;
             window.location.href = deepLink;
           } else {
@@ -1330,11 +1345,8 @@
           }
         });
 
-        wcProvider.on('connect', () => {
-          closeWCQr();
-        });
+        wcProvider.on('connect', () => { closeWCQr(); });
 
-        // Trigger connection (fires display_uri event)
         await wcProvider.connect();
 
         const accounts = wcProvider.accounts;
@@ -1402,7 +1414,27 @@
     // Keep the generic connectWallet alias so any other callers still work
     function connectWallet() { connectMetaMask(); }
 
-
+    // ── ACCOUNT CHANGE HANDLER ──
+    function handleAccountsChanged(accounts) {
+      if (accounts.length === 0) {
+        // Wallet disconnected
+        const mmBtn = document.getElementById('connectButton');
+        const wcBtn = document.getElementById('wcButton');
+        const addrEl = document.getElementById('walletAddress');
+        mmBtn.innerHTML = '<i class="fas fa-plug"></i> MetaMask';
+        mmBtn.disabled = false;
+        mmBtn.style.background = '';
+        wcBtn.innerHTML = '<i class="fas fa-mobile-alt"></i> WalletConnect';
+        wcBtn.disabled = false;
+        wcBtn.style.background = '';
+        addrEl.textContent = '';
+        web3 = null;
+        contract = null;
+      } else {
+        const addrEl = document.getElementById('walletAddress');
+        addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
+      }
+    }
 
     // ── MODAL ──
     function showModal(type, title, message) {
