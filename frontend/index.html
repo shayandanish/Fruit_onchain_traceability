@@ -9,8 +9,6 @@
     content="VerdantChain — blockchain-powered farm-to-table food traceability. Register batches, track transport, warehouse, and retail on-chain." />
   <!-- Web3 -->
   <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
-  <!-- MetaMask SDK for Mobile Support -->
-  <script src="https://cdn.jsdelivr.net/npm/@metamask/sdk@0.14.2/dist/browser/lib/metamask-sdk.js"></script>
   <!-- ABI -->
   <script src="abi.js"></script>
   <!-- Google Fonts -->
@@ -1120,55 +1118,117 @@
 
   <script>
     // ── GLOBALS ──
-    let web3, contract, mmsdk, ethereum;
+    let web3, contract;
 
-    try {
-      // Initialize MetaMask SDK
-      mmsdk = new MetaMaskSDK.MetaMaskSDK({
-        dappMetadata: {
-          name: "VerdantChain",
-          url: window.location.href,
-        },
-        logging: { sdk: false }
-      });
-      ethereum = mmsdk.getProvider();
-    } catch (err) {
-      console.warn("MetaMask SDK could not be initialized:", err);
+    // ── MOBILE DETECTION ──
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    // ── SET CONNECTED STATE ──
+    function setConnected(provider, account) {
+      web3 = new Web3(provider);
+      contract = new web3.eth.Contract(abi, contractAddress);
+      const btn = document.getElementById('connectButton');
+      const addrEl = document.getElementById('walletAddress');
+      btn.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
+      btn.disabled = true;
+      btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
+      addrEl.textContent = `🔗 ${account.slice(0, 6)}…${account.slice(-4)}`;
+      // Listen for account changes
+      provider.on('accountsChanged', handleAccountsChanged);
+      provider.on('chainChanged', () => window.location.reload());
     }
 
     // ── CONNECT WALLET ──
     async function connectWallet() {
-      const btn = document.getElementById('connectButton');
-      const addrEl = document.getElementById('walletAddress');
-
-      // Ensure we have an ethereum provider (either from SDK or injected)
-      const provider = ethereum || window.ethereum;
-      if (!provider) {
-        return showModal('error', 'MetaMask Not Found', 'Please install MetaMask to use this application.');
+      // Case 1: Desktop — MetaMask extension is present
+      if (window.ethereum && !isMobile) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          setConnected(window.ethereum, accounts[0]);
+          return;
+        } catch (err) {
+          showModal('error', 'Connection Failed', err.message);
+          return;
+        }
       }
 
+      // Case 2: Inside MetaMask mobile browser (window.ethereum injected)
+      if (window.ethereum && isMobile) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          setConnected(window.ethereum, accounts[0]);
+          return;
+        } catch (err) {
+          showModal('error', 'Connection Failed', err.message);
+          return;
+        }
+      }
+
+      // Case 3: Mobile browser WITHOUT MetaMask — deep link into MetaMask app
+      if (isMobile) {
+        const dappUrl = encodeURIComponent(window.location.href);
+        const mmDeepLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+        showMobileConnectModal(mmDeepLink);
+        return;
+      }
+
+      // Case 4: Desktop without extension — prompt install
+      showModal('warning', 'MetaMask Not Found',
+        'Please install the MetaMask browser extension from metamask.io, then refresh this page.');
+    }
+
+    // ── MOBILE CONNECT MODAL ──
+    function showMobileConnectModal(deepLink) {
+      // Build a nice modal with a button to open MetaMask app
+      const modal = document.getElementById('transactionModal');
+      const icon = document.getElementById('modalIcon');
+      const titleEl = document.getElementById('modalTitle');
+      const msgEl = document.getElementById('modalMessage');
+      const closeBtn = document.querySelector('.modal-close');
+
+      icon.className = 'modal-icon';
+      icon.style.background = 'rgba(251,191,36,0.12)';
+      icon.innerHTML = '<i class="fas fa-mobile-alt" style="color:#fbbf24;"></i>';
+      titleEl.textContent = 'Open in MetaMask';
+      msgEl.innerHTML = `
+        <div style="font-size:0.85rem; color:rgba(255,255,255,0.55); margin-bottom:18px; line-height:1.6;">
+          Tap below to open this page inside the MetaMask mobile app and connect your wallet.
+        </div>
+        <a href="${deepLink}" target="_blank" style="
+          display:flex; align-items:center; justify-content:center; gap:10px;
+          padding:14px; border-radius:14px;
+          background:linear-gradient(135deg,#f97316,#ea580c);
+          color:#fff; font-weight:700; font-size:0.95rem;
+          text-decoration:none; margin-bottom:12px;
+          box-shadow: 0 8px 24px -8px rgba(249,115,22,0.6);
+        ">
+          <i class="fas fa-external-link-alt"></i> Open MetaMask App
+        </a>
+        <div style="font-size:0.75rem; color:rgba(255,255,255,0.3); margin-top:4px;">
+          Don't have MetaMask? <a href="https://metamask.io/download/" target="_blank" style="color:#4ade80;">Download here</a>
+        </div>
+      `;
+      closeBtn.textContent = 'Cancel';
+      modal.classList.remove('hidden');
+
+      // After MetaMask app opens and user comes back, re-check connection
+      window.addEventListener('focus', recheckConnection, { once: true });
+    }
+
+    // ── RECHECK AFTER RETURNING FROM METAMASK APP ──
+    async function recheckConnection() {
+      if (!window.ethereum) return;
       try {
-        // The SDK handles deep linking or showing a QR code if extension is missing
-        const accounts = await provider.request({ method: 'eth_requestAccounts' });
-        web3 = new Web3(provider);
-        contract = new web3.eth.Contract(abi, contractAddress);
-        const acct = accounts[0];
-
-        btn.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
-        btn.disabled = true;
-        btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
-        addrEl.textContent = `🔗 ${acct.slice(0, 6)}…${acct.slice(-4)}`;
-
-        // Setup listener for account changes
-        provider.on('accountsChanged', handleAccountsChanged);
-      } catch (err) {
-        showModal('error', 'Connection Failed', err.message);
-      }
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts && accounts.length > 0) {
+          document.getElementById('transactionModal').classList.add('hidden');
+          setConnected(window.ethereum, accounts[0]);
+        }
+      } catch (e) {}
     }
 
     function handleAccountsChanged(accounts) {
       if (accounts.length === 0) {
-        // Wallet disconnected
         const btn = document.getElementById('connectButton');
         const addrEl = document.getElementById('walletAddress');
         btn.innerHTML = '<i class="fas fa-plug"></i> Connect MetaMask';
@@ -1176,12 +1236,12 @@
         btn.style.background = '';
         addrEl.textContent = '';
         web3 = null;
+        contract = null;
       } else {
         const addrEl = document.getElementById('walletAddress');
         addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
-        const provider = ethereum || window.ethereum;
-        if (!web3 && provider) {
-          web3 = new Web3(provider);
+        if (!web3 && window.ethereum) {
+          web3 = new Web3(window.ethereum);
           contract = new web3.eth.Contract(abi, contractAddress);
         }
       }
@@ -1189,25 +1249,15 @@
 
     // ── AUTO-CONNECT ON LOAD ──
     window.addEventListener('load', async () => {
-      const provider = ethereum || window.ethereum;
-      if (!provider) return;
-
+      if (!window.ethereum) return;
       try {
-        const accounts = await provider.request({ method: 'eth_accounts' });
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts && accounts.length > 0) {
-          web3 = new Web3(provider);
-          contract = new web3.eth.Contract(abi, contractAddress);
-          const btn = document.getElementById('connectButton');
-          const addrEl = document.getElementById('walletAddress');
-          btn.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
-          btn.disabled = true;
-          btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
-          addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
-
-          provider.on('accountsChanged', handleAccountsChanged);
+          setConnected(window.ethereum, accounts[0]);
         }
-      } catch (e) { }
+      } catch (e) {}
     });
+
 
     // ── MODAL ──
     function showModal(type, title, message) {
