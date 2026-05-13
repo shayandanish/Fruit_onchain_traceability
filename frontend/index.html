@@ -9,6 +9,10 @@
     content="VerdantChain — blockchain-powered farm-to-table food traceability. Register batches, track transport, warehouse, and retail on-chain." />
   <!-- Web3 -->
   <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <!-- WalletConnect Ethereum Provider v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js"></script>
+  <!-- QRCode.js for WC QR display on desktop -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <!-- ABI -->
   <script src="abi.js"></script>
   <!-- Google Fonts -->
@@ -252,6 +256,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      flex-wrap: wrap;
     }
 
     #connectButton {
@@ -278,6 +283,116 @@
     #connectButton:disabled {
       opacity: 0.7;
       cursor: not-allowed;
+    }
+
+    #wcButton {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border: none;
+      border-radius: var(--radius-btn);
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    #wcButton:hover:not(:disabled) {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px -8px rgba(37, 99, 235, 0.5);
+    }
+
+    #wcButton:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    /* WC QR Modal */
+    #wcQrModal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+
+    #wcQrModal.hidden {
+      display: none;
+    }
+
+    .wc-modal-box {
+      background: #0f2018;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      padding: 28px 24px;
+      max-width: 340px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 40px 80px rgba(0, 0, 0, 0.7);
+    }
+
+    .wc-modal-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      color: #fff;
+      margin: 0 auto 12px;
+    }
+
+    .wc-modal-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .wc-modal-sub {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.4);
+      margin-bottom: 20px;
+    }
+
+    #wcQrDiv {
+      background: #fff;
+      border-radius: 14px;
+      padding: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    #wcQrDiv canvas,
+    #wcQrDiv img {
+      border-radius: 8px;
+    }
+
+    .wc-cancel {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.85rem;
+      padding: 9px 20px;
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+    }
+
+    .wc-cancel:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
     }
 
     #walletAddress {
@@ -901,12 +1016,15 @@
         <div class="wallet-label-icon"><i class="fas fa-wallet"></i></div>
         <div>
           <div class="wallet-label-text">Wallet Connection</div>
-          <div class="wallet-label-sub">Connect MetaMask to register &amp; update batches</div>
+          <div class="wallet-label-sub">Connect your wallet to register &amp; update batches</div>
         </div>
       </div>
       <div class="wallet-actions">
-        <button id="connectButton" onclick="connectWallet()">
-          <i class="fas fa-plug"></i> Connect MetaMask
+        <button id="connectButton" onclick="connectMetaMask()">
+          <i class="fas fa-plug"></i> MetaMask
+        </button>
+        <button id="wcButton" onclick="connectWalletConnect()">
+          <i class="fas fa-mobile-alt"></i> WalletConnect
         </button>
         <span id="walletAddress"></span>
       </div>
@@ -1116,99 +1234,174 @@
     </div>
   </div>
 
+  <!-- WalletConnect QR Modal -->
+  <div id="wcQrModal" class="hidden">
+    <div class="wc-modal-box">
+      <div class="wc-modal-logo"><i class="fas fa-link"></i></div>
+      <div class="wc-modal-title">Scan with MetaMask</div>
+      <div class="wc-modal-sub">Open MetaMask mobile → tap Scan → scan this QR code</div>
+      <div id="wcQrDiv"></div>
+      <button class="wc-cancel" onclick="cancelWC()">Cancel</button>
+    </div>
+  </div>
+
   <script>
     // ── GLOBALS ──
     let web3, contract;
 
+    // ─────────────────────────────────────────────────────────
+    // ⚠️  IMPORTANT: Replace with your own free Project ID from
+    //     https://cloud.walletconnect.com  (takes ~2 minutes)
+    // ─────────────────────────────────────────────────────────
+    const WC_PROJECT_ID = 'eea53cc7b3d045fc78556c83060fb055';
 
-    // ── SET CONNECTED STATE ──
-    function setConnected(provider, account) {
+    // Sepolia chain (change if you deployed on a different network)
+    const CHAIN_ID = 11155111;
+    const RPC_URL = 'https://ethereum-sepolia-rpc.publicnode.com';
+
+    let wcProvider = null;
+
+    // ── SET CONNECTED STATE (shared by both MetaMask and WalletConnect) ──
+    function setConnected(provider, account, method) {
       web3 = new Web3(provider);
       contract = new web3.eth.Contract(abi, contractAddress);
-      const btn = document.getElementById('connectButton');
+
+      const mmBtn = document.getElementById('connectButton');
+      const wcBtn = document.getElementById('wcButton');
       const addrEl = document.getElementById('walletAddress');
-      btn.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
-      btn.disabled = true;
-      btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
+
+      const label = method === 'wc' ? '🔗 WC' : '🔗 MM';
+      mmBtn.innerHTML = '<i class="fas fa-check-circle"></i> MetaMask';
+      mmBtn.disabled = true;
+      mmBtn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
+      wcBtn.innerHTML = '<i class="fas fa-check-circle"></i> WalletConnect';
+      wcBtn.disabled = true;
+      wcBtn.style.background = 'linear-gradient(135deg,#1d4ed8,#1e3a8a)';
       addrEl.textContent = `🔗 ${account.slice(0, 6)}…${account.slice(-4)}`;
-      // Listen for account changes
+
       provider.on('accountsChanged', handleAccountsChanged);
       provider.on('chainChanged', () => window.location.reload());
     }
 
-    // ── CONNECT WALLET ──
-    async function connectWallet() {
-      // window.ethereum is injected by MetaMask extension (desktop) or
-      // MetaMask mobile app's built-in browser — connect directly.
-      if (window.ethereum) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          setConnected(window.ethereum, accounts[0]);
-        } catch (err) {
-          showModal('error', 'Connection Failed', err.message);
-        }
-        return;
+    // ── 1. MetaMask (desktop extension / MetaMask mobile browser) ──
+    async function connectMetaMask() {
+      if (!window.ethereum) {
+        return showModal('warning', 'MetaMask Not Found',
+          'MetaMask extension is not installed. Use the WalletConnect button to connect from your mobile wallet.');
       }
-
-      // No injected provider — build the deep link
-      const mmDeepLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-      if (isMobile) {
-        // Mobile: immediately open MetaMask app (no intermediate modal)
-        window.location.href = mmDeepLink;
-        // When user returns from MetaMask, re-check connection
-        window.addEventListener('focus', recheckConnection, { once: true });
-      } else {
-        // Desktop: extension not installed — show a simple install message
-        showModal('warning', 'MetaMask Extension Required',
-          'Please install the MetaMask browser extension at metamask.io, then refresh this page.');
-      }
-    }
-
-
-    // ── RECHECK AFTER RETURNING FROM METAMASK APP ──
-    async function recheckConnection() {
-      if (!window.ethereum) return;
       try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts && accounts.length > 0) {
-          document.getElementById('transactionModal').classList.add('hidden');
-          setConnected(window.ethereum, accounts[0]);
-        }
-      } catch (e) {}
-    }
-
-    function handleAccountsChanged(accounts) {
-      if (accounts.length === 0) {
-        const btn = document.getElementById('connectButton');
-        const addrEl = document.getElementById('walletAddress');
-        btn.innerHTML = '<i class="fas fa-plug"></i> Connect MetaMask';
-        btn.disabled = false;
-        btn.style.background = '';
-        addrEl.textContent = '';
-        web3 = null;
-        contract = null;
-      } else {
-        const addrEl = document.getElementById('walletAddress');
-        addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
-        if (!web3 && window.ethereum) {
-          web3 = new Web3(window.ethereum);
-          contract = new web3.eth.Contract(abi, contractAddress);
-        }
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        setConnected(window.ethereum, accounts[0], 'mm');
+      } catch (err) {
+        showModal('error', 'Connection Failed', err.message);
       }
     }
 
-    // ── AUTO-CONNECT ON LOAD ──
+    // ── 2. WalletConnect v2 ──
+    async function connectWalletConnect() {
+      const wcBtn = document.getElementById('wcButton');
+      wcBtn.disabled = true;
+      wcBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting…';
+
+      try {
+        wcProvider = await window.EthereumProvider.init({
+          projectId: WC_PROJECT_ID,
+          chains: [CHAIN_ID],
+          showQrModal: false,          // We render our own QR
+          rpcMap: { [CHAIN_ID]: RPC_URL },
+          metadata: {
+            name: 'VerdantChain',
+            description: 'Fruit On-Chain Traceability',
+            url: window.location.href,
+            icons: ['https://img.icons8.com/fluency/96/000000/apple.png']
+          }
+        });
+
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        // Display URI: show QR on desktop, deep link on mobile
+        wcProvider.on('display_uri', (uri) => {
+          if (isMobile) {
+            // Deep link directly into MetaMask mobile
+            const deepLink = `https://metamask.app.link/wc?uri=${encodeURIComponent(uri)}`;
+            window.location.href = deepLink;
+          } else {
+            showWCQr(uri);
+          }
+        });
+
+        wcProvider.on('connect', () => {
+          closeWCQr();
+        });
+
+        // Trigger connection (fires display_uri event)
+        await wcProvider.connect();
+
+        const accounts = wcProvider.accounts;
+        if (accounts && accounts.length > 0) {
+          setConnected(wcProvider, accounts[0], 'wc');
+        }
+
+      } catch (err) {
+        closeWCQr();
+        if (err.message && err.message.includes('User rejected')) {
+          showModal('warning', 'Cancelled', 'Connection was rejected.');
+        } else if (err.message && err.message.includes('projectId')) {
+          showModal('error', 'Project ID Missing',
+            'Please set your WalletConnect Project ID in the code. Get one free at cloud.walletconnect.com');
+        } else {
+          showModal('error', 'WalletConnect Failed', err.message || 'Unknown error.');
+        }
+
+        // Reset WC button
+        const wcBtn = document.getElementById('wcButton');
+        wcBtn.disabled = false;
+        wcBtn.innerHTML = '<i class="fas fa-mobile-alt"></i> WalletConnect';
+        wcBtn.style.background = '';
+      }
+    }
+
+    // ── Show WC QR Modal (desktop) ──
+    function showWCQr(uri) {
+      const qrDiv = document.getElementById('wcQrDiv');
+      qrDiv.innerHTML = '';
+      new QRCode(qrDiv, {
+        text: uri,
+        width: 200,
+        height: 200,
+        colorDark: '#14532d',
+        colorLight: '#ffffff',
+      });
+      document.getElementById('wcQrModal').classList.remove('hidden');
+    }
+
+    function closeWCQr() {
+      document.getElementById('wcQrModal').classList.add('hidden');
+    }
+
+    function cancelWC() {
+      closeWCQr();
+      if (wcProvider) { wcProvider.disconnect().catch(() => { }); }
+      const wcBtn = document.getElementById('wcButton');
+      wcBtn.disabled = false;
+      wcBtn.innerHTML = '<i class="fas fa-mobile-alt"></i> WalletConnect';
+      wcBtn.style.background = '';
+    }
+
+    // ── Auto-connect on load (MetaMask session restore) ──
     window.addEventListener('load', async () => {
       if (!window.ethereum) return;
       try {
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts && accounts.length > 0) {
-          setConnected(window.ethereum, accounts[0]);
+          setConnected(window.ethereum, accounts[0], 'mm');
         }
-      } catch (e) {}
+      } catch (e) { }
     });
+
+    // Keep the generic connectWallet alias so any other callers still work
+    function connectWallet() { connectMetaMask(); }
+
 
 
     // ── MODAL ──
