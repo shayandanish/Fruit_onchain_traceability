@@ -7,6 +7,8 @@
   <meta name="description" content="VerdantChain — blockchain-powered farm-to-table food traceability. Register batches, track transport, warehouse, and retail on-chain." />
   <!-- Web3 -->
   <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <!-- MetaMask SDK for Mobile Support -->
+  <script src="https://cdn.jsdelivr.net/npm/@metamask/sdk@0.34.1/dist/browser/es/metamask-sdk.min.js"></script>
   <!-- ABI -->
   <script src="abi.js"></script>
   <!-- Google Fonts -->
@@ -678,16 +680,25 @@
   // ── GLOBALS ──
   let web3, contract;
 
+  // Initialize MetaMask SDK
+  const mmsdk = new MetaMaskSDK.MetaMaskSDK({
+    dappMetadata: {
+      name: "VerdantChain",
+      url: window.location.href,
+    },
+    logging: { sdk: false }
+  });
+  const ethereum = mmsdk.getProvider();
+
   // ── CONNECT WALLET ──
   async function connectWallet() {
     const btn = document.getElementById('connectButton');
     const addrEl = document.getElementById('walletAddress');
-    if (!window.ethereum) {
-      return showModal('error', 'MetaMask Not Found', 'Please install MetaMask to use this application.');
-    }
+    
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      web3 = new Web3(window.ethereum);
+      // The SDK handles deep linking or showing a QR code if extension is missing
+      const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      web3 = new Web3(ethereum);
       contract = new web3.eth.Contract(abi, contractAddress);
       const acct = accounts[0];
 
@@ -695,28 +706,51 @@
       btn.disabled = true;
       btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
       addrEl.textContent = `🔗 ${acct.slice(0, 6)}…${acct.slice(-4)}`;
+      
+      // Setup listener for account changes
+      ethereum.on('accountsChanged', handleAccountsChanged);
     } catch (err) {
       showModal('error', 'Connection Failed', err.message);
     }
   }
 
+  function handleAccountsChanged(accounts) {
+    if (accounts.length === 0) {
+      // Wallet disconnected
+      const btn = document.getElementById('connectButton');
+      const addrEl = document.getElementById('walletAddress');
+      btn.innerHTML = '<i class="fas fa-plug"></i> Connect MetaMask';
+      btn.disabled = false;
+      btn.style.background = '';
+      addrEl.textContent = '';
+      web3 = null;
+    } else {
+      const addrEl = document.getElementById('walletAddress');
+      addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
+      if (!web3) {
+        web3 = new Web3(ethereum);
+        contract = new web3.eth.Contract(abi, contractAddress);
+      }
+    }
+  }
+
   // ── AUTO-CONNECT ON LOAD ──
   window.addEventListener('load', async () => {
-    if (window.ethereum && window.ethereum.selectedAddress) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          web3 = new Web3(window.ethereum);
-          contract = new web3.eth.Contract(abi, contractAddress);
-          const btn = document.getElementById('connectButton');
-          const addrEl = document.getElementById('walletAddress');
-          btn.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
-          btn.disabled = true;
-          btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
-          addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
-        }
-      } catch (e) {}
-    }
+    try {
+      const accounts = await ethereum.request({ method: 'eth_accounts' });
+      if (accounts && accounts.length > 0) {
+        web3 = new Web3(ethereum);
+        contract = new web3.eth.Contract(abi, contractAddress);
+        const btn = document.getElementById('connectButton');
+        const addrEl = document.getElementById('walletAddress');
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
+        btn.disabled = true;
+        btn.style.background = 'linear-gradient(135deg,#166534,#14532d)';
+        addrEl.textContent = `🔗 ${accounts[0].slice(0, 6)}…${accounts[0].slice(-4)}`;
+        
+        ethereum.on('accountsChanged', handleAccountsChanged);
+      }
+    } catch (e) {}
   });
 
   // ── MODAL ──

@@ -12,7 +12,8 @@ Check out the live application here:
 
 - **🌱 Farm Registration**: Farmers can register batches with harvest dates, origin, and initial quality metrics.
 - **🚚 Logistics Tracking**: Transporters and warehouses append data (temperatures, facilities, vehicle names) as the fruit moves.
-- **📱 Consumer Transparency**: Anyone can scan a QR code to view the entire journey. **No wallet or app required** for viewing records.
+- **📱 Mobile Support**: Seamlessly connect MetaMask on mobile browsers (Chrome/Safari) via deep linking—no desktop required.
+- **🔍 Consumer Transparency**: Anyone can scan a QR code to view the entire journey. **No wallet or app required** for viewing records.
 - **🛡️ Immutable Records**: Once recorded on the blockchain, the data cannot be tampered with or deleted.
 - **⚡ Real-time Verification**: Instant proof of provenance for distributors and retailers.
 
